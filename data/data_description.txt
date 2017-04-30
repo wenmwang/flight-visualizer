@@ -1,0 +1,3 @@
+county.json - The geojson file with US county and state level boundaries
+airports.csv - All US airports meta data with flights to be visualized
+flights.csv - US domestic flights data to be visualized. Columns including origin and destination airport, coordinates, and airlines, etc.
