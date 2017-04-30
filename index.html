@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<style>
+h1 {
+	font-family: "PT Sans", sans-serif;
+	font-size: 48px;
+	font-weight: 400;
+	margin-left: 150px;
+	margin-top: 30px;
+	margin-bottom: 0px;
+}
+
+.states {
+	fill: #f4e1d2;
+}
+
+.state-borders {
+	fill: none;
+	stroke: #fff;
+	stroke-linejoin: round;
+	stroke-linecap: round;
+}
+
+.airport {
+	fill: #bc5a45;
+	stroke: #fff;
+	opacity: 0.5;
+}
+
+.flight {
+	stroke: #50394c;
+	opacity: 0;
+	pointer-events: none;
+}
+
+div.menu-title {
+	font-family: "PT Sans", sans-serif;
+	font-size: 12px;
+}
+div.tooltip {	
+    position: absolute;	
+    text-align: center;	
+    width: 200px;					
+    height: 28px;					
+    padding: 2px;				
+    font-size: 12px;	
+    font-family: "PT Sans", sans-serif;	
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    border: 0px;		
+    border-radius: 3px;			
+    pointer-events: none;			
+}
+
+</style>
+
+<h1>US Domestic Flights Visualizer</h1>
+<body width="1000" height="1000"></svg>
+
+<script src="https://d3js.org/d3.v4.js"></script>
+<script src="https://d3js.org/d3-selection-multi.v0.4.min.js"></script>
+<script src="https://d3js.org/topojson.v3.min.js"></script>
+<script>
+	var width = 960,
+		height = 600;
+
+	var svg = d3.select("body").append("svg")
+							   .attr("width", width)
+							   .attr("height", height);
+
+	var layer1 = svg.append('g'); //Map layer
+	var layer2 = svg.append('g'); //Points and routes layer
+	var tools = d3.select("body")
+				.append("div") //div for tooltips
+			    .attr("class", "tooltip")			
+			    .style("opacity", 0);
+	var dropDownTitle = d3.select("body")
+							.append("div")
+							.attr("class", "menu-title")
+							.html("Filter by Carrier:")
+	var dropDown = d3.select("body")
+						.append("div")
+						.append("select")
+						.attr("name", "carrier-list")
+						.attr("left", "400px")
+						.attr("top", "200px")
+						.on("change", changeCarrier);
+	var carrier_list = [{"value": "All"},
+						{"value": "Alaska"}, 
+						{"value": "American"}, 
+						{"value": "Delta"}, 
+						{"value": "Frontier"}, 
+						{"value": "Hawaiian"}, 
+						{"value": "JetBlue"}, 
+						{"value": "Southwest"}, 
+						{"value": "Spirit"}, 
+						{"value": "United"}, 
+						{"value": "Virgin America"}];
+	var options = dropDown.selectAll("option")
+						.data(carrier_list)
+						.enter()
+						.append("option")
+						.text(function(d) {return d.value;})
+						.attr("value", function(d) {return d.value;});
+
+	var path = d3.geoPath();
+	var route = d3.geoPath()
+					.pointRadius(2.5);
+
+
+	var projection = d3.geoAlbersUsa()
+					   .scale(1280)
+					   .translate([width / 2, height / 2]);
+
+	var rScale = d3.scaleSqrt()
+					.range([2, 40]);
+
+	d3.json("data/county.json", function(error, us) {
+		if (error) throw error;
+
+		layer1.append("g")
+	       	  .attr("class", "states")
+	       	  .selectAll("path")
+	          .data(topojson.feature(us, us.objects.states).features)
+	          .enter()
+	          .append("path")
+	          .attr("d", path);
+
+		layer1.append("path")
+		      .attr("class", "state-borders")
+		      .attr("d", path(topojson.mesh(us, us.objects.states, function(a, b) { return a !== b; })));
+
+	});
+
+	d3.csv("data/flights.csv", function(data) {
+		data.forEach(function(d) {
+			d.OriginLat = +d.OriginLat;
+			d.OriginLon = +d.OriginLon;
+			d.DestLat = +d.DestLat;
+			d.DestLon = +d.DestLon;
+			d.Originpx = projection([d.OriginLon, d.OriginLat]);
+			d.Destpx = projection([d.DestLon, d.DestLat]);
+			if (d.Originpx != null && d.Destpx != null) {
+				layer2.append("path")
+					.datum({type: "LineString", 
+							coordinates: [d.Originpx, d.Destpx]})
+					.attr("class", "flight " + d.CARRIER_NAME.split(" ")[0] + " " + d.ORIGIN)
+					.attr("d", route);
+			} else {console.log(d.ORIGIN, d.DEST, d.OriginLat, d.OriginLon, d.DestLat, d.DestLon);}
+		})
+	});
+
+	d3.csv("data/airport.csv", function(data) {
+		data.forEach(function(d) {
+			d.Lat = +d.Lat;
+			d.Lon = +d.Lon;
+		});
+
+		rScale.domain([1, d3.max(data, function(d) {return +d.Flights;})]);
+
+		layer2.selectAll("circle")
+		      .data(data)
+		      .enter()
+		      .append("circle")
+		      .attr("class", function(d) {return "airport " + d.Airport;})
+		      .attr("cx", function(d) {
+		      	if (projection([d.Lon, d.Lat]) != null) {
+		      		return projection([d.Lon, d.Lat])[0];
+		      	} else {
+		      		console.log(d);
+		      	}
+		      })
+		      .attr("cy", function(d) {
+		      	if (projection([d.Lon, d.Lat]) != null) {
+		      		return projection([d.Lon, d.Lat])[1];
+		      	}
+		      })
+		      .attr("r", function(d) {return Math.floor(rScale(d.Flights)) + "px";})
+		      .on("mouseover", handleMouseOver)
+		      .on("mouseout", handleMouseOut)
+	});
+
+
+	function handleMouseOver(d, i) {  // Add interactivity
+		d3.select(this)
+			.attr("r", function(d) {return (parseInt(this.getAttribute("r")) + 10).toString() + "px";})
+			.style("opacity", 0.9);
+		tools.html("<strong>" + d.Airport + "</strong></br>" + d.Name)
+			.style("opacity", 0.9)
+			.style("height", (14 + Math.max(Math.floor(d.Name.length / 10) * 10, 14)) + "px")
+			.style("left", projection([d.Lon, d.Lat])[0] + 20 + "px")
+			.style("top", projection([d.Lon, d.Lat])[1] -10 + "px");
+		d3.selectAll(".flight").filter("." + d.Airport)
+			.style("opacity", 0.2);
+	};
+
+	function handleMouseOut(d, i) {
+		d3.select(this)
+			.attr("r", function(d) {return (parseInt(this.getAttribute("r")) - 10).toString() + "px";})
+			.style("opacity", "0.5");
+		tools.style("opacity", 0);
+		d3.selectAll(".flight").filter("." + d.Airport)
+			.style("opacity", 0);
+	};
+
+	function changeCarrier() {
+		var selectedValue = d3.event.target.value;
+		if (selectedValue === "All") {
+			d3.selectAll(".flight")
+				.style("visibility", "visible");
+			//rScale.domain([])
+		} else {
+			d3.selectAll(".flight")
+				.style("visibility", "hidden");
+			d3.selectAll(".flight").filter("." + selectedValue.split(" ")[0])
+				.style("visibility", "visible");
+		};
+
+		d3.selectAll(".airport")
+			.transition()
+			.duration(2000)
+			.attr("r", function(d, i) {return getNewSize(d)[0]})
+			.style("fill", function(d, i) {return getNewSize(d)[1];});
+	};
+
+	function getNewSize(d) {
+		var selectedValue = d3.event.target.value.split(" ")[0];
+		var currAirport = d.Airport;
+		if (selectedValue === "All") {
+			var numFlights = d3.selectAll(".flight").filter("." + currAirport).size();
+		} else {
+			var numFlights = d3.selectAll(".flight")
+								.filter("." + currAirport)
+								.filter("." + selectedValue)
+								.size();
+		}
+		var newSize = Math.floor(rScale(Math.max(1, numFlights)));
+		if (numFlights === 0) {
+			var newColor = "grey"//"#DCDCDC"
+		} else {
+			var newColor = "#bc5a45"
+		};
+		return [newSize + "px", newColor];
+	};
+</script>
+
